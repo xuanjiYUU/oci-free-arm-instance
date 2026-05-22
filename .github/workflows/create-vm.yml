@@ -57,6 +57,9 @@ jobs:
             --assign-public-ip true \
             --display-name "coolify-vm" \
             --boot-volume-size-in-gbs 100 2>&1 || true)
+          echo "=== OCI OUTPUT ==="
+          echo "$OCI_OUTPUT"
+          echo "=== END OCI OUTPUT ==="
           echo "log_data<<EOF" >> $GITHUB_OUTPUT
           echo "$OCI_OUTPUT" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
