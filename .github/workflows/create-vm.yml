@@ -29,15 +29,16 @@ jobs:
       - name: Add OCI CLI to path
         run: echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-      - name: Setup OCI CLI and Keep Trying
+      - name: Setup OCI CLI and Try to Create VM
         id: create_vm
         continue-on-error: true
         run: |
           set -o pipefail
+
           export SUPPRESS_LABEL_WARNING=True
           export OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING=True
 
-          pip install -q oci-cli
+          pip install oci-cli
 
           mkdir -p ~/.oci
           echo "${{ secrets.OCI_CLI_KEY_CONTENT }}" > ~/.oci/oci_api_key.pem
@@ -51,14 +52,9 @@ jobs:
           echo "region=${{ env.OCI_CLI_REGION }}" >> ~/.oci/config
           echo "${{ secrets.SSH_PUBLIC_KEY }}" > /home/runner/my_ssh_key.pub
 
-          # Keep retrying inside a single run (up to ~30 min)
-          END=$((SECONDS+1800))
-          ATTEMPT=0
-          while [ $SECONDS -lt $END ]; do
-            ATTEMPT=$((ATTEMPT+1))
-            echo ""
-            echo "=== Attempt $ATTEMPT ($(date -u)) ==="
-            
+          # Retry up to 3 times on timeout
+          for attempt in 1 2 3; do
+            echo "=== Attempt $attempt ==="
             OCI_OUTPUT=$(oci compute instance launch \
               --compartment-id "$COMPARTMENT_ID" \
               --availability-domain "$AD_NAME" \
@@ -76,24 +72,16 @@ jobs:
             echo "=== END OCI OUTPUT ==="
 
             if echo "$OCI_OUTPUT" | grep -q '"lifecycle-state": "PROVISIONING"'; then
-              echo "SUCCESS! VM created!"
-              echo "log_data<<EOF" >> $GITHUB_OUTPUT
-              echo "$OCI_OUTPUT" >> $GITHUB_OUTPUT
-              echo "EOF" >> $GITHUB_OUTPUT
+              echo "Success!"
               exit 0
             fi
-            
             if echo "$OCI_OUTPUT" | grep -q 'timed out'; then
-              echo "Connection timeout, retrying in 10s..."
+              echo "Connection timed out, retrying..."
               sleep 10
-            else
-              echo "Out of capacity or other error, retrying in 60s..."
-              sleep 60
+              continue
             fi
+            break
           done
 
-          echo "Reached time limit. Will retry on next workflow run."
-          echo "log_data<<EOF" >> $GITHUB_OUTPUT
-          echo "timeout" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          echo "Failed - will retry in next schedule cycle"
           exit 1
